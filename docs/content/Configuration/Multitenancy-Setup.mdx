@@ -198,34 +198,34 @@ Let's consider the following example:
 
 We store data for different users in different databases, but on the same
 Postgres host. The database name is `my_app_1_2`, where `1` is **Application
-ID** and `2` is **User ID**.
+ID** and `2` is **Tenant ID**.
 
-To make it work with Cube.js, first we need to pass the `appId` and `userId` as
-context to every query. We should include that into our token generation code.
+To make it work with Cube.js, first we need to pass the `appId` and `tenantId`
+as context to every query. We should include them into our token generation
+code.
 
 ```javascript
 const jwt = require('jsonwebtoken');
 const CUBE_API_SECRET = 'secret';
 
-const cubejsToken = jwt.sign(
-  { appId: appId, userId: userId },
-  CUBE_API_SECRET,
-  { expiresIn: '30d' }
-);
+const cubejsToken = jwt.sign({ appId: '1', tenantId: '2' }, CUBE_API_SECRET, {
+  expiresIn: '30d',
+});
 ```
 
-Now, we can access them as [securityContext][ref-config-security-ctx] object
-inside the context object. Let's first use
-[contextToAppId][ref-config-ctx-to-appid] to create a dynamic Cube.js App ID for
-every combination of `appId` and `userId`.
+Now, we can access them through the [`securityContext`][ref-config-security-ctx]
+property inside the context object. Let's first use
+[`contextToAppId`][ref-config-ctx-to-appid] and
+[`contextToOrchestratorId`][ref-config-ctx-to-orch-id] to create a dynamic
+Cube.js App ID and Orchestrator ID for every combination of `appId` and
+`tenantId`.
 
 <WarningBox>
 
-Cube.js App ID (the result of [`contextToAppId`][ref-config-ctx-to-appid]) is
-used as a caching key for various in-memory structures like schema compilation
-results, connection pool, etc. A missing
-[`contextToAppId`][ref-config-ctx-to-appid] definition will result in unexpected
-caching issues such as schema of one tenant is used for another one.
+Cube.js App IDs and Orchestrator IDs are used as caching keys for various
+in-memory structures like schema compilation results, connection pool, etc.
+Missing definitions for either of the above can result in unexpected caching
+issues such as a schema of one tenant being used for another one.
 
 </WarningBox>
 
@@ -234,12 +234,12 @@ caching issues such as schema of one tenant is used for another one.
 ```javascript
 module.exports = {
   contextToAppId: ({ securityContext }) =>
-    `CUBEJS_APP_${securityContext.appId}_${securityContext.userId}`,
+    `CUBEJS_APP_${securityContext.appId}_${securityContext.tenantId}`,
 };
 ```
 
 Next, we can use [`driverFactory`][ref-config-driverfactory] to dynamically
-select database, based on `appId` and `userId`.
+select database, based on `appId` and `tenantId`.
 
 **cube.js:**
 
@@ -248,10 +248,10 @@ const PostgresDriver = require('@cubejs-backend/postgres-driver');
 
 module.exports = {
   contextToAppId: ({ securityContext }) =>
-    `CUBEJS_APP_${securityContext.appId}_${securityContext.userId}`,
+    `CUBEJS_APP_${securityContext.appId}_${securityContext.tenantId}`,
   driverFactory: ({ securityContext }) =>
     new PostgresDriver({
-      database: `my_app_${securityContext.appId}_${securityContext.userId}`,
+      database: `my_app_${securityContext.appId}_${securityContext.tenantId}`,
     }),
 };
 ```
@@ -269,9 +269,9 @@ requesting data.
 ```javascript
 module.exports = {
   contextToAppId: ({ securityContext }) =>
-    `CUBEJS_APP_${securityContext.userId}`,
+    `CUBEJS_APP_${securityContext.tenantId}`,
   preAggregationsSchema: ({ securityContext }) =>
-    `pre_aggregations_${securityContext.userId}`,
+    `pre_aggregations_${securityContext.tenantId}`,
 };
 ```
 
@@ -295,7 +295,9 @@ const MongoBIDriver = require('@cubejs-backend/mongobi-driver');
 
 module.exports = {
   contextToAppId: ({ securityContext }) =>
-    `CUBEJS_APP_${securityContext.appId}_${securityContext.userId}`,
+    `CUBEJS_APP_${securityContext.appId}_${securityContext.tenantId}`,
+  contextToOrchestratorId: ({ securityContext }) =>
+    `CUBEJS_APP_${securityContext.appId}_${securityContext.tenantId}`,
   dbType: ({ securityContext }) => {
     if (securityContext.appId === 3) {
       return 'mongobi';
@@ -306,12 +308,12 @@ module.exports = {
   driverFactory: ({ securityContext }) => {
     if (securityContext.appId === 3) {
       return new MongoBIDriver({
-        database: `my_app_${securityContext.appId}_${securityContext.userId}`,
+        database: `my_app_${securityContext.appId}_${securityContext.tenantId}`,
         port: 3307,
       });
     } else {
       return new PostgresDriver({
-        database: `my_app_${securityContext.appId}_${securityContext.userId}`,
+        database: `my_app_${securityContext.appId}_${securityContext.tenantId}`,
       });
     }
   },
@@ -333,7 +335,7 @@ const FileRepository = require('@cubejs-backend/server-core/core/FileRepository'
 
 module.exports = {
   contextToAppId: ({ securityContext }) =>
-    `CUBEJS_APP_${securityContext.appId}_${securityContext.userId}`,
+    `CUBEJS_APP_${securityContext.appId}_${securityContext.tenantId}`,
   dbType: ({ securityContext }) => {
     if (securityContext.appId === 3) {
       return 'mongobi';
@@ -344,12 +346,12 @@ module.exports = {
   driverFactory: ({ securityContext }) => {
     if (securityContext.appId === 3) {
       return new MongoBIDriver({
-        database: `my_app_${securityContext.appId}_${securityContext.userId}`,
+        database: `my_app_${securityContext.appId}_${securityContext.tenantId}`,
         port: 3307,
       });
     } else {
       return new PostgresDriver({
-        database: `my_app_${securityContext.appId}_${securityContext.userId}`,
+        database: `my_app_${securityContext.appId}_${securityContext.tenantId}`,
       });
     }
   },
