@@ -1,0 +1,11 @@
+---
+source: cubesql/integration/tests/mysql.rs
+assertion_line: 107
+expression: self.print_query_result(&mut response).await
+
+---
++--------------------+
+| database()         |
++--------------------+
+| information_schema |
++--------------------+
