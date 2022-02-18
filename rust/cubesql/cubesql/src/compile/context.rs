@@ -6,7 +6,7 @@ use sqlparser::ast;
 
 use crate::{
     compile::CompilationError,
-    schema::{V1CubeMetaDimensionExt, V1CubeMetaMeasureExt, V1CubeMetaSegmentExt},
+    transport::{V1CubeMetaDimensionExt, V1CubeMetaMeasureExt, V1CubeMetaSegmentExt},
 };
 
 use super::CompilationResult;
@@ -67,10 +67,10 @@ impl QueryContext {
 
     pub fn find_dimension_for_identifier(
         &self,
-        column_name: &String,
+        identifier: &String,
     ) -> Option<V1CubeMetaDimension> {
         for dimension in self.meta.dimensions.iter() {
-            if dimension.get_real_name().eq_ignore_ascii_case(column_name) {
+            if dimension.get_real_name().eq_ignore_ascii_case(identifier) {
                 return Some(dimension.clone());
             }
         }
@@ -411,6 +411,24 @@ impl QueryContext {
 
         let measure_name = match argument {
             ast::Expr::Wildcard => "*".to_string(),
+            ast::Expr::Value(ast::Value::Number(n, is_negative)) => {
+                let prefix = if *is_negative {
+                    "-".to_string()
+                } else {
+                    "".to_string()
+                };
+
+                let number = prefix + n;
+
+                if &number != "1" {
+                    return Err(CompilationError::User(format!(
+                        "Unable to use number '{}' as argument to aggregation function",
+                        number
+                    )));
+                }
+
+                "*".to_string()
+            }
             ast::Expr::Identifier(i) => i.value.to_string(),
             ast::Expr::CompoundIdentifier(i) => {
                 // @todo We need a context with main table rel
@@ -432,77 +450,91 @@ impl QueryContext {
         };
 
         let fn_name = f.name.to_string().to_ascii_lowercase();
+        let (selection_opt, call_agg_type) = if fn_name.eq(&"count".to_string()) && !f.distinct {
+            if &measure_name == "*" {
+                let measure_for_argument = self.meta.measures.iter().find(|measure| {
+                    if measure.agg_type.is_some() {
+                        let agg_type = measure.agg_type.clone().unwrap();
+                        agg_type.eq(&"count".to_string())
+                    } else {
+                        false
+                    }
+                });
 
-        if measure_name == "*" && !(fn_name.eq(&"count".to_string()) && !f.distinct) {
-            return Err(CompilationError::User(format!(
-                "Unable to use '*' as argument to aggregation function '{}()' (only COUNT() supported)",
-                f.name.to_string(),
-            )));
-        }
-
-        let mut call_agg_type = fn_name;
-
-        if f.distinct {
-            call_agg_type += &"Distinct".to_string();
-        };
-
-        if call_agg_type.eq(&"count".to_string()) {
-            let measure_for_argument = self.meta.measures.iter().find(|measure| {
-                if measure.agg_type.is_some() {
-                    let agg_type = measure.agg_type.clone().unwrap();
-                    agg_type.eq(&"count".to_string())
+                if let Some(measure) = measure_for_argument {
+                    (
+                        Some(Selection::Measure(measure.clone())),
+                        "count".to_string(),
+                    )
                 } else {
-                    false
+                    return Err(CompilationError::User(format!(
+                        "Unable to find measure with count type: {}",
+                        f
+                    )));
                 }
-            });
-
-            if let Some(measure) = measure_for_argument {
-                Ok(Selection::Measure(measure.clone()))
             } else {
-                Err(CompilationError::User(format!(
-                    "Unable to find measure with count type: {}",
-                    f
-                )))
+                (
+                    self.find_selection_for_identifier(&measure_name, true),
+                    "count".to_string(),
+                )
             }
         } else {
-            let selection_opt = self.find_selection_for_identifier(&measure_name, true);
-            if let Some(selection) = selection_opt {
-                match selection {
-                    Selection::Measure(measure) => {
-                        if measure.agg_type.is_some()
-                            && !measure.is_same_agg_type(&call_agg_type)
-                        {
-                            return Err(CompilationError::User(format!(
-                                "Measure aggregation type doesn't match. The aggregation type for '{}' is '{}()' but '{}()' was provided",
-                                measure.get_real_name(),
-                                measure.agg_type.unwrap_or("unknown".to_string()).to_uppercase(),
-                                f.name.to_string(),
-                            )));
-                        } else {
-                            // @todo Should we throw an exception?
-                        };
+            let mut call_agg_type = fn_name;
 
-                        Ok(Selection::Measure(measure))
-                    }
-                    Selection::Dimension(t) | Selection::TimeDimension(t, _) => {
-                        Err(CompilationError::User(format!(
-                            "Dimension '{}' was used with the aggregate function '{}()'. Please use a measure instead",
-                            t.get_real_name(),
-                            f.name.to_string(),
-                        )))
-                    }
-                    Selection::Segment(s) => Err(CompilationError::User(format!(
-                        "Unable to use segment '{}' as measure in aggregation function '{}()'",
-                        s.get_real_name(),
+            if f.distinct {
+                call_agg_type += &"Distinct".to_string();
+            };
+
+            if measure_name == "*" {
+                return Err(CompilationError::User(format!(
+                    "Unable to use '{}' as argument to aggregation function '{}()' (only COUNT() supported)",
+                    measure_name,
+                    f.name.to_string(),
+                )));
+            }
+
+            (
+                self.find_selection_for_identifier(&measure_name, true),
+                call_agg_type,
+            )
+        };
+
+        let selection = selection_opt.ok_or_else(|| {
+            CompilationError::User(format!(
+                "Unable to find measure with name '{}' which is used as argument to aggregation function '{}()'",
+                measure_name,
+                f.name.to_string(),
+            ))
+        })?;
+        match selection {
+            Selection::Measure(measure) => {
+                if measure.agg_type.is_some()
+                    && !measure.is_same_agg_type(&call_agg_type)
+                {
+                    return Err(CompilationError::User(format!(
+                        "Measure aggregation type doesn't match. The aggregation type for '{}' is '{}()' but '{}()' was provided",
+                        measure.get_real_name(),
+                        measure.agg_type.unwrap_or("unknown".to_string()).to_uppercase(),
                         f.name.to_string(),
-                    ))),
-                }
-            } else {
+                    )));
+                } else {
+                    // @todo Should we throw an exception?
+                };
+
+                Ok(Selection::Measure(measure))
+            }
+            Selection::Dimension(t) | Selection::TimeDimension(t, _) => {
                 Err(CompilationError::User(format!(
-                    "Unable to find measure with name '{}' for {}",
-                    measure_name, f
+                    "Dimension '{}' was used with the aggregate function '{}()'. Please use a measure instead",
+                    t.get_real_name(),
+                    f.name.to_string(),
                 )))
             }
+            Selection::Segment(s) => Err(CompilationError::User(format!(
+                "Unable to use segment '{}' as measure in aggregation function '{}()'",
+                s.get_real_name(),
+                f.name.to_string(),
+            ))),
         }
     }
 

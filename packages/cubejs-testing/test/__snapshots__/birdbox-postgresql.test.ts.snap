@@ -77,6 +77,14 @@ Array [
 ]
 `;
 
+exports[`postgresql HTTP Transport Dbt orders count: Dbt orders count 1`] = `
+Array [
+  Object {
+    "OrdersFiltered.ordersCount": "171334",
+  },
+]
+`;
+
 exports[`postgresql WS Transport #1 Orders.totalAmount: #1 Orders.totalAmount 1`] = `
 Array [
   Object {
@@ -150,6 +158,110 @@ Array [
   Object {
     "Events.count": "145",
     "Events.type": "PublicEvent",
+  },
+]
+`;
+
+exports[`postgresql responseFormat http+responseFormat=compact option#1+2: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat http+responseFormat=compact option#1: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat http+responseFormat=compact option#2: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat http+responseFormat=default: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat ws+responseFormat=compact option#1+2: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat ws+responseFormat=compact option#1: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat ws+responseFormat=compact option#2: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
+  },
+]
+`;
+
+exports[`postgresql responseFormat ws+responseFormat=default: result-type 1`] = `
+Array [
+  Object {
+    "Orders.status": "processed",
+    "Orders.totalAmount": "800",
+  },
+  Object {
+    "Orders.status": "shipped",
+    "Orders.totalAmount": "600",
   },
 ]
 `;

@@ -7,6 +7,7 @@ use cubestore::sql::timestamp_from_string;
 use cubestore::store::DataFrame;
 use cubestore::table::{Row, TableValue, TimestampValue};
 use cubestore::util::decimal::Decimal;
+use cubestore::CubeError;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use std::env;
@@ -30,6 +31,7 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
         t("insert", insert),
         t("select_test", select_test),
         t("negative_numbers", negative_numbers),
+        t("negative_decimal", negative_decimal),
         t("custom_types", custom_types),
         t("group_by_boolean", group_by_boolean),
         t("group_by_decimal", group_by_decimal),
@@ -55,6 +57,7 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
         t("case_column_escaping", case_column_escaping),
         t("inner_column_escaping", inner_column_escaping),
         t("convert_tz", convert_tz),
+        t("date_trunc", date_trunc),
         t("coalesce", coalesce),
         t("ilike", ilike),
         t("count_distinct_crash", count_distinct_crash),
@@ -79,6 +82,11 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
         t(
             "create_table_with_location_invalid_digit",
             create_table_with_location_invalid_digit,
+        ),
+        t("create_table_with_csv", create_table_with_csv),
+        t(
+            "create_table_with_csv_no_header",
+            create_table_with_csv_no_header,
         ),
         t("create_table_with_url", create_table_with_url),
         t("create_table_fail_and_retry", create_table_fail_and_retry),
@@ -146,6 +154,12 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
             "dimension_only_queries_for_stream_table",
             dimension_only_queries_for_stream_table,
         ),
+        t(
+            "unique_key_and_multi_measures_for_stream_table",
+            unique_key_and_multi_measures_for_stream_table,
+        ),
+        t("divide_by_zero", divide_by_zero),
+        t("panic_worker", panic_worker),
     ];
 
     fn t<F>(name: &'static str, f: fn(Box<dyn SqlClient>) -> F) -> (&'static str, TestFn)
@@ -253,6 +267,33 @@ async fn negative_numbers(service: Box<dyn SqlClient>) {
         .unwrap();
 
     assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(-153)]));
+}
+
+async fn negative_decimal(service: Box<dyn SqlClient>) {
+    let _ = service.exec_query("CREATE SCHEMA foo").await.unwrap();
+
+    let _ = service
+        .exec_query("CREATE TABLE foo.values (decimal_value decimal)")
+        .await
+        .unwrap();
+
+    service
+        .exec_query("INSERT INTO foo.values (decimal_value) VALUES (-0.12345)")
+        .await
+        .unwrap();
+
+    let result = service
+        .exec_query("SELECT * from foo.values")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        match &result.get_rows()[0].values()[0] {
+            TableValue::Decimal(d) => d.to_string(5),
+            x => panic!("Expected decimal but found: {:?}", x),
+        },
+        "-0.12345"
+    );
 }
 
 async fn custom_types(service: Box<dyn SqlClient>) {
@@ -1145,6 +1186,56 @@ async fn convert_tz(service: Box<dyn SqlClient>) {
     );
 }
 
+async fn date_trunc(service: Box<dyn SqlClient>) {
+    service.exec_query("CREATE SCHEMA foo").await.unwrap();
+
+    service
+        .exec_query("CREATE TABLE foo.timestamps (t timestamp)")
+        .await
+        .unwrap();
+
+    service
+        .exec_query(
+            "INSERT INTO foo.timestamps (t) VALUES \
+            ('2020-01-01T00:00:00.000Z'), \
+            ('2020-03-01T00:00:00.000Z'), \
+            ('2020-04-01T00:00:00.000Z'), \
+            ('2020-07-01T00:00:00.000Z'), \
+            ('2020-09-01T00:00:00.000Z')",
+        )
+        .await
+        .unwrap();
+
+    let result = service
+        .exec_query(
+            "SELECT date_trunc('quarter', `t`) `quarter` \
+            FROM foo.timestamps `timestamp`",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.get_rows(),
+        &vec![
+            Row::new(vec![TableValue::Timestamp(TimestampValue::new(
+                1577836800000000000
+            )),]),
+            Row::new(vec![TableValue::Timestamp(TimestampValue::new(
+                1577836800000000000
+            )),]),
+            Row::new(vec![TableValue::Timestamp(TimestampValue::new(
+                1585699200000000000
+            )),]),
+            Row::new(vec![TableValue::Timestamp(TimestampValue::new(
+                1593561600000000000
+            )),]),
+            Row::new(vec![TableValue::Timestamp(TimestampValue::new(
+                1593561600000000000
+            )),])
+        ]
+    );
+}
+
 async fn ilike(service: Box<dyn SqlClient>) {
     service.exec_query("CREATE SCHEMA s").await.unwrap();
     service
@@ -1660,6 +1751,50 @@ async fn create_table_with_location_invalid_digit(service: Box<dyn SqlClient>) {
         res.is_err(),
         "Expected invalid digit error but got {:?}",
         res
+    );
+}
+
+async fn create_table_with_csv(service: Box<dyn SqlClient>) {
+    let _ = service
+        .exec_query("CREATE SCHEMA IF NOT EXISTS test")
+        .await
+        .unwrap();
+    let _ = service
+        .exec_query("CREATE TABLE test.table (`fruit` text, `number` int) WITH (input_format = 'csv') LOCATION './data/csv.csv'")
+        .await
+        .unwrap();
+    let result = service
+        .exec_query("SELECT * FROM test.table")
+        .await
+        .unwrap();
+    assert_eq!(
+        to_rows(&result),
+        vec![
+            vec![TableValue::String("apple".to_string()), TableValue::Int(2)],
+            vec![TableValue::String("banana".to_string()), TableValue::Int(3)]
+        ]
+    );
+}
+
+async fn create_table_with_csv_no_header(service: Box<dyn SqlClient>) {
+    let _ = service
+        .exec_query("CREATE SCHEMA IF NOT EXISTS test")
+        .await
+        .unwrap();
+    let _ = service
+        .exec_query("CREATE TABLE test.table (`fruit` text, `number` int) WITH (input_format = 'csv_no_header') LOCATION './data/csv_no_header.csv'")
+        .await
+        .unwrap();
+    let result = service
+        .exec_query("SELECT * FROM test.table")
+        .await
+        .unwrap();
+    assert_eq!(
+        to_rows(&result),
+        vec![
+            vec![TableValue::String("apple".to_string()), TableValue::Int(2)],
+            vec![TableValue::String("banana".to_string()), TableValue::Int(3)]
+        ]
     );
 }
 
@@ -4314,6 +4449,56 @@ async fn dimension_only_queries_for_stream_table(service: Box<dyn SqlClient>) {
         .unwrap();
 
     assert_eq!(to_rows(&r), rows(&[("0"), ("1")]));
+}
+
+async fn unique_key_and_multi_measures_for_stream_table(service: Box<dyn SqlClient>) {
+    service.exec_query("CREATE SCHEMA test").await.unwrap();
+    service.exec_query("CREATE TABLE test.events_by_type (foo text, bar timestamp, bar_id text, measure1 int, measure2 text) unique key (foo, bar, bar_id)").await.unwrap();
+    for i in 0..2 {
+        for j in 0..2 {
+            service
+                .exec_query(&format!("INSERT INTO test.events_by_type (foo, bar, bar_id, measure1, measure2, __seq) VALUES ('a', '2021-01-01T00:00:00.000', '{}', {}, '{}', {})", i, j, "text_value", i * 10 + j))
+                .await
+                .unwrap();
+        }
+    }
+    let r = service
+        .exec_query(
+            "SELECT bar_id, measure1, measure2 FROM test.events_by_type as `events` LIMIT 100",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        to_rows(&r),
+        rows(&[("0", 1, "text_value"), ("1", 1, "text_value")])
+    );
+}
+
+async fn divide_by_zero(service: Box<dyn SqlClient>) {
+    service.exec_query("CREATE SCHEMA s").await.unwrap();
+    service
+        .exec_query("CREATE TABLE s.t(i int, z int)")
+        .await
+        .unwrap();
+    service
+        .exec_query("INSERT INTO s.t(i, z) VALUES (1, 0), (2, 0), (3, 0)")
+        .await
+        .unwrap();
+    let r = service
+        .exec_query("SELECT i / z FROM s.t")
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        r.elide_backtrace(),
+        CubeError::internal("Execution error: Internal: Arrow error: External error: Arrow error: Divide by zero error".to_string())
+    );
+}
+
+async fn panic_worker(service: Box<dyn SqlClient>) {
+    let r = service.exec_query("SYS PANIC WORKER").await;
+    assert_eq!(r, Err(CubeError::panic("worker panic".to_string())));
 }
 
 fn to_rows(d: &DataFrame) -> Vec<Vec<TableValue>> {
