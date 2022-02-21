@@ -756,6 +756,8 @@ declare module '@cubejs-client/core' {
     | 'notEquals'
     | 'contains'
     | 'notContains'
+    | 'startsWith'
+    | 'endsWith'
     | 'gt'
     | 'gte'
     | 'lt'
