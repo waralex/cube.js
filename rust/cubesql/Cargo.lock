@@ -533,6 +533,7 @@ dependencies = [
  "comfy-table",
  "cubeclient",
  "datafusion",
+ "egg",
  "futures",
  "insta",
  "itertools",
@@ -542,6 +543,7 @@ dependencies = [
  "msql-srv",
  "mysql_common 0.26.0",
  "nanoid",
+ "paste",
  "pretty_assertions",
  "rand 0.8.4",
  "regex",
@@ -632,6 +634,23 @@ name = "downcast"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bb454f0228b18c7f4c3b0ebbee346ed9c52e7443b0999cd543ff3571205701d"
+
+[[package]]
+name = "egg"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9f1058c150e258252353a8f8e6d41036ced7d266390114d121abf2ace6e1b6b"
+dependencies = [
+ "fxhash",
+ "hashbrown",
+ "indexmap",
+ "instant",
+ "log",
+ "once_cell",
+ "smallvec",
+ "symbolic_expressions",
+ "thiserror",
+]
 
 [[package]]
 name = "either"
@@ -866,6 +885,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -2437,6 +2465,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "symbolic_expressions"
+version = "5.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c68d531d83ec6c531150584c42a4290911964d5f0d79132b193b67252a23b71"
 
 [[package]]
 name = "syn"

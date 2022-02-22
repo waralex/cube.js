@@ -41,11 +41,13 @@ use self::engine::udf::{
     create_version_udf,
 };
 use self::parser::parse_sql_to_statement;
+use crate::compile::rewrite::LogicalPlanToLanguageConverter;
 
 pub mod builder;
 pub mod context;
 pub mod engine;
 pub mod parser;
+pub mod rewrite;
 pub mod service;
 
 #[derive(Debug, PartialEq)]
@@ -1362,6 +1364,9 @@ impl QueryPlanner {
             }
         };
 
+        // TODO should use this route when rewriting is done
+        // return self.create_df_logical_plan(stmt.clone());
+
         let from_table = if select.from.len() == 1 {
             &select.from[0]
         } else {
@@ -1981,9 +1986,19 @@ WHERE `TABLE_SCHEMA` = '{}'",
             CompilationError::Internal(format!("Planning optimization error: {}", err))
         })?;
 
+        let mut converter = LogicalPlanToLanguageConverter::new(cube_ctx);
+        let root = converter
+            .add_logical_plan(&optimized_plan)
+            .map_err(|e| CompilationError::User(e.to_string()))?;
+        let rewrite_plan = converter
+            .find_best_plan(root)
+            .map_err(|e| CompilationError::User(e.to_string()))?; // TODO error
+
+        println!("Rewrite: {:#?}", rewrite_plan);
+
         Ok(QueryPlan::DataFusionSelect(
             StatusFlags::empty(),
-            optimized_plan,
+            rewrite_plan,
             ctx,
         ))
     }
@@ -2143,6 +2158,7 @@ mod tests {
     use datafusion::execution::dataframe_impl::DataFrameImpl;
 
     use super::*;
+    use datafusion::logical_plan::PlanVisitor;
     use pretty_assertions::assert_eq;
 
     fn get_test_meta() -> Vec<V1CubeMeta> {
@@ -2279,17 +2295,24 @@ mod tests {
     }
 
     fn find_cube_scan_deep_search(parent: Arc<LogicalPlan>) -> CubeScanNode {
-        match &*parent {
-            LogicalPlan::Projection { input, .. } => find_cube_scan_deep_search(input.clone()),
-            LogicalPlan::Extension { node } => {
-                if let Some(scan_node) = node.as_any().downcast_ref::<CubeScanNode>() {
-                    scan_node.clone()
-                } else {
-                    panic!("Unable to unpack extension node");
+        pub struct FindCubeScanNodeVisitor(Option<CubeScanNode>);
+
+        impl PlanVisitor for FindCubeScanNodeVisitor {
+            type Error = CubeError;
+
+            fn pre_visit(&mut self, plan: &LogicalPlan) -> Result<bool, Self::Error> {
+                if let LogicalPlan::Extension { node } = plan {
+                    if let Some(scan_node) = node.as_any().downcast_ref::<CubeScanNode>() {
+                        self.0 = Some(scan_node.clone());
+                    }
                 }
+                Ok(true)
             }
-            _ => unimplemented!(),
         }
+
+        let mut visitor = FindCubeScanNodeVisitor(None);
+        parent.accept(&mut visitor).unwrap();
+        visitor.0.expect("No CubeScanNode was found in plan")
     }
 
     trait LogicalPlanTestUtils {
