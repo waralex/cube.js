@@ -1973,7 +1973,7 @@ WHERE `TABLE_SCHEMA` = '{}'",
         let ctx = self.create_execution_ctx();
 
         let state = ctx.state.lock().unwrap().clone();
-        let cube_ctx = CubeContext::new(&state, &self.meta.cubes);
+        let cube_ctx = CubeContext::new(&state, self.meta.clone());
         let df_query_planner = SqlToRel::new(&cube_ctx);
 
         let plan = df_query_planner
@@ -1991,7 +1991,7 @@ WHERE `TABLE_SCHEMA` = '{}'",
             .add_logical_plan(&optimized_plan)
             .map_err(|e| CompilationError::User(e.to_string()))?;
         let rewrite_plan = converter
-            .find_best_plan(root)
+            .find_best_plan(root, Arc::new(self.state.auth_context().unwrap()))
             .map_err(|e| CompilationError::User(e.to_string()))?; // TODO error
 
         println!("Rewrite: {:#?}", rewrite_plan);

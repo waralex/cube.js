@@ -15,7 +15,7 @@ use super::information_schema::{
     schemata::InfoSchemaSchemataProvider, statistics::InfoSchemaStatisticsProvider,
     tables::InfoSchemaTableProvider, variables::PerfSchemaVariablesProvider,
 };
-use crate::transport::V1CubeMetaExt;
+use crate::transport::{MetaContext, V1CubeMetaExt};
 use crate::CubeError;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
@@ -29,13 +29,13 @@ use std::any::Any;
 pub struct CubeContext<'a> {
     /// Internal state for the context (default)
     pub state: &'a ExecutionContextState,
-    /// Our context
-    pub cubes: &'a Vec<V1CubeMeta>,
+    /// To access cubes
+    pub meta: Arc<MetaContext>,
 }
 
 impl<'a> CubeContext<'a> {
-    pub fn new(state: &'a ExecutionContextState, cubes: &'a Vec<V1CubeMeta>) -> Self {
-        Self { state, cubes }
+    pub fn new(state: &'a ExecutionContextState, meta: Arc<MetaContext>) -> Self {
+        Self { state, meta }
     }
 
     pub fn table_name_by_table_provider(
@@ -88,15 +88,20 @@ impl<'a> ContextProvider for CubeContext<'a> {
         };
 
         if let Some(tp) = table_path {
-            if let Some(cube) = self.cubes.iter().find(|c| c.name.eq_ignore_ascii_case(&tp)) {
+            if let Some(cube) = self
+                .meta
+                .cubes
+                .iter()
+                .find(|c| c.name.eq_ignore_ascii_case(&tp))
+            {
                 return Some(Arc::new(CubeTableProvider::new(cube.clone()))); // TODO .clone()
             }
             if tp.eq_ignore_ascii_case("information_schema.tables") {
-                return Some(Arc::new(InfoSchemaTableProvider::new(self.cubes)));
+                return Some(Arc::new(InfoSchemaTableProvider::new(self.meta.clone())));
             }
 
             if tp.eq_ignore_ascii_case("information_schema.columns") {
-                return Some(Arc::new(InfoSchemaColumnsProvider::new(self.cubes)));
+                return Some(Arc::new(InfoSchemaColumnsProvider::new(self.meta.clone())));
             }
 
             if tp.eq_ignore_ascii_case("information_schema.statistics") {

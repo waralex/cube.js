@@ -14,7 +14,7 @@ use datafusion::{
     physical_plan::{memory::MemoryExec, ExecutionPlan},
 };
 
-use crate::transport::{CubeColumn, V1CubeMetaExt};
+use crate::transport::{CubeColumn, MetaContext, V1CubeMetaExt};
 
 use super::tables::new_string_array_with_placeholder;
 use crate::compile::engine::provider::TableName;
@@ -155,10 +155,10 @@ impl TableName for InfoSchemaColumnsProvider {
 }
 
 impl InfoSchemaColumnsProvider {
-    pub fn new(cubes: &Vec<V1CubeMeta>) -> Self {
+    pub fn new(meta: Arc<MetaContext>) -> Self {
         let mut builder = InformationSchemaColumnsBuilder::new();
 
-        for cube in cubes {
+        for cube in meta.cubes.iter() {
             let position = 0;
 
             for column in cube.get_columns() {
